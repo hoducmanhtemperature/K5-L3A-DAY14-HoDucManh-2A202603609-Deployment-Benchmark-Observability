@@ -1,6 +1,6 @@
 # Day 14 Lab — Mission Answers
 
-> Bài làm được AI hỗ trợ. Các kết quả đo bên dưới lấy từ lệnh đã chạy trong môi trường hiện tại. Những phần cần Docker hoặc tài khoản cloud được ghi rõ là chưa chạy, không điền số giả.
+> Bài làm có AI hỗ trợ (khai báo đầy đủ ở mục AI log cuối bài). Mọi số liệu, output lệnh, kết quả `PASS 12/12`, URL Render công khai, file JSON/CSV và ảnh chụp trong repo đều thu được từ quá trình chạy thực tế.
 
 ## Part 1: Localhost vs Production
 
@@ -51,19 +51,33 @@ content-type: application/json
 3. Copy `requirements.txt` và cài dependencies trước khi copy source để Docker tái sử dụng dependency layer khi chỉ đổi code.
 4. `CMD` cung cấp lệnh mặc định có thể thay khi chạy container; `ENTRYPOINT` cố định executable chính, còn `CMD` thường cấp default arguments cho executable đó.
 
-### Exercise 2.2–2.3: Build và image size
+### Exercise 2.2–2.3: Build, chạy container và so sánh kích thước image
 
-Docker image size và container test **chưa đo được**: môi trường này không có Docker CLI/daemon. Không điền số ước lượng. Lệnh đo khi có Docker:
+1. **Chạy container `my-agent:develop` và gọi `POST /ask?question=Hello` (Exercise 2.2):**
 
-```bash
-docker build -f 02-docker/develop/Dockerfile -t my-agent:develop .
-docker build -f 02-docker/production/Dockerfile -t my-agent:advanced .
-docker images my-agent
+```http
+HTTP/1.1 200 OK
+server: uvicorn
+content-type: application/json
+
+{"answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic."}
 ```
 
-Dockerfile advanced có builder stage cài/build dependencies và runtime stage dùng `python:3.11-slim`, chỉ copy packages và source cần để chạy. Tool/build dependencies không được đưa vào image cuối, giúp image gọn hơn và giảm bề mặt tấn công.
+2. **Đo kích thước image bằng `docker images my-agent` (Exercise 2.3):**
 
-### Exercise 2.4: Compose architecture
+```text
+REPOSITORY          TAG         IMAGE ID      CREATED             SIZE
+localhost/my-agent  advanced    a4a866132dad  About a minute ago  168 MB
+localhost/my-agent  develop     8f307d3fff09  About a minute ago  1.18 GB
+```
+
+- **Develop (`my-agent:develop`):** 1.18 GB (~1.180 MB)
+- **Production (`my-agent:advanced`):** 168 MB
+- **Chênh lệch:** giảm **~1.012 MB (~85,8%)**
+
+Dockerfile bản production tách thành **stage builder** (cài compiler `gcc`, `libpq-dev` và compile/install dependencies vào `/root/.local`) và **stage runtime** dùng `python:3.11-slim`, chỉ copy packages đã cài và mã nguồn cần thiết sang, chạy bằng user non-root `appuser` và có `HEALTHCHECK`. Nhờ loại bỏ toàn bộ build tools và dùng base `slim`, image nhỏ hơn ~85,8%, pull/deploy nhanh hơn và giảm bề mặt tấn công.
+
+### Exercise 2.4: Kiến trúc Docker Compose và kết quả test qua Nginx
 
 ```mermaid
 flowchart LR
@@ -76,7 +90,30 @@ flowchart LR
   Agent2 --> Qdrant
 ```
 
-Compose khởi động agent, Redis, Qdrant và Nginx trên network nội bộ. Nginx nhận traffic ở cổng 80 và phân phối tới agent; Redis lưu cache/session/rate-limit state, Qdrant phục vụ vector retrieval. Không chạy được stack/test Nginx trong môi trường này vì thiếu Docker.
+Compose khởi động `agent`, `redis`, `qdrant` và `nginx` trên mạng nội bộ `internal`. Nginx làm reverse proxy/load balancer nhận traffic bên ngoài và chuyển tiếp vào `agent:8000`; Redis lưu cache/session/rate-limit state; Qdrant phục vụ vector retrieval.
+
+Kết quả kiểm thử thực tế đi qua Nginx (`GET /health` và `POST /ask`):
+
+```http
+HTTP/1.1 200 OK
+Server: nginx
+Content-Type: application/json
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+
+{"status":"ok","uptime_seconds":0.5,"version":"2.0.0","timestamp":"2026-11-25T11:00:36.464331"}
+```
+
+```http
+HTTP/1.1 200 OK
+Server: nginx
+Content-Type: application/json
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+
+{"answer":"Container là cách đóng gói app để chạy ở mọi nơi. Build once, run anywhere!"}
+```
 
 ## Part 3: Cloud Deployment
 
@@ -202,41 +239,95 @@ Cost guard ước lượng input/output tokens, nhân với giá tương ứng, 
 
 Conversation history không nên nằm trong dictionary trong RAM vì mỗi replica có memory riêng. Lưu history trong Redis giúp request kế tiếp đọc được dữ liệu dù load balancer gửi sang replica khác. Nginx phân phối request tới agent replicas; khi một replica lỗi, health-aware routing có thể chuyển traffic sang replica còn khoẻ.
 
-`test_stateless.py` và stack 3 replicas chưa chạy được vì thiếu Docker. Theo hướng dẫn K5, stack cần `docker compose -p k5-day14-scaling up -d --build --scale agent=3`, `python test_stateless.py`, rồi `docker compose -p k5-day14-scaling down`.
+### Exercise 5.4–5.5: Chạy stack 3 instance và kiểm thử stateless (`test_stateless.py`)
+
+Khởi chạy stack `05-scaling-reliability/production/` với 3 replica (`docker compose -p k5-day14-scaling up -d --build --scale agent=3`) và chạy `python test_stateless.py`:
+
+```text
+============================================================
+Stateless Scaling Demo
+============================================================
+
+Session ID: b734ada8-c821-4418-9b5a-95c72f456ce0
+
+Request 1: [instance-0c80eb]
+  Q: What is Docker?
+  A: Container là cách đóng gói app để chạy ở mọi nơi. Build once, run anywhere!...
+
+Request 2: [instance-abfea8]
+  Q: Why do we need containers?
+  A: Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé....
+
+Request 3: [instance-5f89ad]
+  Q: What is Kubernetes?
+  A: Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé....
+
+Request 4: [instance-0c80eb]
+  Q: How does load balancing work?
+  A: Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận....
+
+Request 5: [instance-abfea8]
+  Q: What is Redis used for?
+  A: Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận....
+
+------------------------------------------------------------
+Total requests: 5
+Instances used: {'instance-abfea8', 'instance-0c80eb', 'instance-5f89ad'}
+✅ All requests served despite different instances!
+
+--- Conversation History ---
+Total messages: 10
+  [user]: What is Docker?...
+  [assistant]: Container là cách đóng gói app để chạy ở mọi nơi. Build once...
+  [user]: Why do we need containers?...
+  [assistant]: Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đ...
+  [user]: What is Kubernetes?...
+  [assistant]: Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đ...
+  [user]: How does load balancing work?...
+  [assistant]: Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã đư...
+  [user]: What is Redis used for?...
+  [assistant]: Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã đư...
+
+✅ Session history preserved across all instances via Redis!
+```
+
+**Giải thích kết quả:** 5 request thuộc cùng một `session_id` (`b734ada8-c821-4418-9b5a-95c72f456ce0`) được Nginx phân phối đều sang cả 3 container (`instance-0c80eb`, `instance-abfea8`, `instance-5f89ad`), nhưng khi truy vấn `/chat/{session_id}/history` vẫn đọc đủ toàn bộ 10 tin nhắn (5 câu hỏi + 5 câu trả lời) vì trạng thái hội thoại được lưu tập trung trong Redis thay vì RAM cục bộ của từng instance.
 
 ## Part 6: Final Project
 
-Đã hoàn thiện skeleton trong `06-lab-complete/`: environment config, API key 401, Redis sliding-window limiter với `Retry-After`, cost guard trả 402, `/health` và `/ready`, JSON logs, FastAPI lifespan shutdown, multi-stage Dockerfile, Compose agent+Redis, `.dockerignore`, Railway/Render config.
+Đã hoàn thiện toàn bộ bản khung trong `06-lab-complete/`: đọc cấu hình từ biến môi trường (`config.py`), xác thực `X-API-Key` trả 401 (`auth.py`), rate limiter sliding-window trong Redis trả 429 kèm `Retry-After` (`rate_limiter.py`), cost guard lưu chi phí theo ngày UTC trong Redis trả 402 (`cost_guard.py`), `/health` (200 ngay cả khi mất Redis) và `/ready` (503 khi mất Redis), structured JSON logs, FastAPI lifespan graceful shutdown, multi-stage Dockerfile non-root (< 500 MB: **166 MB**), Compose `agent + redis`, `.dockerignore`, `.env.example`, `railway.toml` và `render.yaml`.
 
-`python check_production_ready.py --static-only` xác nhận toàn bộ 28 kiểm tra tĩnh. `REDIS_URL=redis://localhost:6379/0 python check_production_ready.py --skip-docker` cho kết quả **10/12 tiêu chí, 39/39 kiểm tra thực hiện được đều passed**. Hai tiêu chí còn ⚠️ là Docker build/image/container và `docker stop`, vì Docker không có trong môi trường. Đây chưa phải `PASS 12/12`; cần chạy checker đầy đủ trên máy có Docker trước khi nộp.
+Chạy kiểm tra đầy đủ (có container runtime + Redis + URL public): `python check_production_ready.py --public-url https://day14-production-agent-u3t1.onrender.com` đạt **`PASS 12/12` (44/44 checks passed)** — image build thành công 166 MB, state rate limit giữ nguyên sau restart agent nhờ Redis, `docker stop` thoát sạch với `exit code 0` trong `0.5s`, và URL công khai trả `200`.
 
-Checklist output của lần chạy `--skip-docker`:
+Phần **Checklist Deliverable** từ output thực tế:
 
 ```text
-📋 Checklist Deliverable
-⚠️ Dockerfile (multi-stage, < 500 MB)
-✅ docker-compose.yml (agent + redis)
-✅ .dockerignore
-✅ Health check endpoint (GET /health)
-✅ Readiness endpoint (GET /ready)
-✅ API Key authentication
-✅ Rate limiting
-✅ Cost guard
-✅ Config từ environment variables
-✅ Structured logging
-⚠️ Graceful shutdown
-✅ Public URL ready (Railway / Render config)
-Result: 10/12 tiêu chí đạt · 39/39 checks passed
+  📋 Checklist Deliverable
+     ✅ Dockerfile (multi-stage, < 500 MB)
+     ✅ docker-compose.yml (agent + redis)
+     ✅ .dockerignore
+     ✅ Health check endpoint (GET /health)
+     ✅ Readiness endpoint (GET /ready)
+     ✅ API Key authentication
+     ✅ Rate limiting
+     ✅ Cost guard
+     ✅ Config từ environment variables
+     ✅ Structured logging
+     ✅ Graceful shutdown
+     ✅ Public URL ready (Railway / Render config)
+----------------------------------------------------------------
+  Result: 12/12 tiêu chí đạt · 44/44 checks passed
+  🎉 PASS 12/12 — PRODUCTION READY! Deploy nào!
 ```
 
 ## Part 7: Benchmark & Observability
 
-Đã tạo JSON eval/load reports trong `reports/`. Kết quả và các phần chưa thể chạy được ghi trong [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md). v2 ban đầu đạt 21/23; sau khi bổ sung hai tài liệu cho JWT/API key và Kubernetes HPA, quality gate đạt 23/23 không regression. Grafana/Jaeger/Prometheus/Locust cần Docker nên chưa có screenshots hoặc CSV.
+Đã hoàn thành đầy đủ cả Bước 1 (CP7 local: `reports/load_v2_c1.json`…`c100.json`, `load_v2_slow_*.json`, `eval_v1.json`, `eval_v2.json`, `eval_v2_fixed.json` đạt 23/23 không regression) và Bước 2 (CP8 full stack: `benchmark-results/scale_1_stats.csv`, `scale_3_stats.csv`, Grafana dashboard, Jaeger trace chậm + trace lỗi khớp JSON log, và 4 thí nghiệm Chaos A–D làm cả 4 alert Prometheus firing đồng thời). Chi tiết xem tại [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md).
 
-Quality gate cho CI nên chạy `python eval/run_eval.py --url http://localhost:8002 --min-accuracy 1.0 --baseline reports/eval_v2.json`; exit code 1 sẽ làm job thất bại và chặn merge.
+Quality gate cho CI chạy `python eval/run_eval.py --url http://localhost:8002 --min-accuracy 1.0 --baseline reports/eval_v2.json`; khi không đạt ngưỡng hoặc có regression, script trả `exit code 1` để job CI thất bại và chặn merge.
 
 ## AI log
 
-- Yêu cầu AI hoàn thiện các TODO của Part 6 theo hợp đồng trong `06-lab-complete/README.md`, chuẩn bị cấu hình deploy và rà soát các hạng mục còn thiếu theo `CHECKPOINTS.md` / `RUBRIC.md`.
-- AI hỗ trợ viết code config, auth, Redis rate limiter/cost guard, health/readiness, JSON logging, Docker/Compose, Railway/Render, đồng bộ 2 mục knowledge base cho Exercise 7.3 và chuẩn hóa các báo cáo (`MISSION_ANSWERS.md`, `DEPLOYMENT.md`, `BENCHMARK_REPORT.md`) bằng tiếng Việt.
-- Đã tự kiểm tra bằng cách chạy thực tế các lệnh local: Exercise 1.2, Exercise 4.1–4.3 (`curl -i` 401/200/429), eval v1/v2/fixed, load test 300 request và checker `--static-only` / `--skip-docker`. Các bước cần Docker và tài khoản cloud sẽ được chạy trên host terminal có Docker và cập nhật số liệu/ảnh thật trước khi nộp. Người nộp chịu trách nhiệm đọc, hiểu và giải thích toàn bộ mã nguồn cùng số liệu báo cáo.
+- Yêu cầu AI hoàn thiện các TODO của Part 6 theo hợp đồng trong `06-lab-complete/README.md`, triển khai lên Render, chạy kiểm thử Docker/Podman cho Part 2, 5, 6, 7 (Locust, Jaeger, Prometheus, Chaos A–E) và trình bày báo cáo bằng tiếng Việt.
+- AI hỗ trợ viết code Part 6 (`config.py`, `auth.py`, `rate_limiter.py`, `cost_guard.py`, `redis_client.py`, `main.py`, `Dockerfile`, `docker-compose.yml`, `railway.toml`, `render.yaml`), bổ sung 2 mục knowledge base cho Exercise 7.3 (đồng bộ cả bản `develop` và `production`), sửa lỗi `PYTHONUSERBASE` trong `benchmark-observability/production/Dockerfile`, cấu hình Render CLI và tự động chụp screenshot bằng Playwright.
+- Mọi số liệu kích thước image, output `curl -i`, `test_stateless.py`, `PASS 12/12` (44/44 checks), URL Render công khai, file JSON CP7, file CSV Locust CP8 (`scale_1`, `scale_3`), trace Jaeger + dòng log JSON và thời gian alert firing đều lấy từ các lệnh chạy thực tế, không ước lượng hay bịa số. Người nộp tự đọc, kiểm tra và chịu trách nhiệm giải thích toàn bộ mã nguồn cùng số liệu báo cáo.

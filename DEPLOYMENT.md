@@ -43,8 +43,6 @@ POST /ask (có X-API-Key)  -> 200  {"question":"Hello","answer":"Agent đang ho�
 
 ## Ảnh chụp màn hình (Screenshots)
 
-*(Cần chụp từ trình duyệt Render Dashboard và terminal kiểm thử rồi lưu vào thư mục `screenshots/`, nhớ che `AGENT_API_KEY`)*
-
-- [Bảng điều khiển triển khai (Dashboard)](screenshots/dashboard.png)
-- [Dịch vụ đang chạy (Service running)](screenshots/running.png)
-- [Kết quả kiểm thử 4 lệnh curl](screenshots/test.png)
+- [Dịch vụ đang chạy trên Render — Swagger UI `/docs`](screenshots/running.png) ✅
+- [Bảng điều khiển triển khai trên Render Dashboard](screenshots/dashboard.png) *(bổ sung từ trình duyệt Render Dashboard đã đăng nhập tại https://dashboard.render.com/web/srv-dc3bm9navr4c73euf4h0)*
+- [Kết quả kiểm thử 4 lệnh curl CP6 (`200 / 200 / 401 / 200`)](screenshots/test.png) *(chụp terminal chạy 4 lệnh trên, nhớ che `AGENT_API_KEY`)*
