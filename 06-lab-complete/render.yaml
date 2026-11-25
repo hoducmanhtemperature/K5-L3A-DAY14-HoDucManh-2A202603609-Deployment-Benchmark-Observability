@@ -2,6 +2,7 @@ services:
   - type: web
     name: day14-production-agent
     runtime: docker
+    plan: free
     rootDir: ./06-lab-complete
     dockerfilePath: ./Dockerfile
     dockerContext: .
