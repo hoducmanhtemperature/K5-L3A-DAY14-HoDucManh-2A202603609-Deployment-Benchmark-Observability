@@ -1,51 +1,50 @@
 # Thông Tin Triển Khai (Deployment Information)
 
-## Trạng thái
-
-Mã nguồn agent Part 6 (`06-lab-complete/`) và cấu hình nền tảng (`render.yaml`, `railway.toml`) đã hoàn thiện. Dịch vụ **chưa được deploy lên cloud** nên chưa có URL công khai hoặc ảnh chụp màn hình triển khai.
-
 ## URL Công Khai (Public URL)
 
-*(Điền sau khi deploy lên Render hoặc Railway, ví dụ: `https://day14-production-agent.onrender.com`)*
+https://day14-production-agent-u3t1.onrender.com
 
 ## Nền tảng triển khai
 
-- **Khuyến nghị chính:** Render (sử dụng Blueprint trong `06-lab-complete/render.yaml`, đã khai báo sẵn web service Docker cho `06-lab-complete` và dịch vụ Redis Key Value miễn phí).
-- **Dự phòng / đối chiếu rubric:** Railway (`06-lab-complete/railway.toml`). Lưu ý Railway xem `railway.toml` là định dạng Config as Code cũ (ngừng đọc từ 2026-12-01), nên nếu deploy mới lên Railway cần cấu hình qua Dashboard hoặc Railway IaC và tạo thêm dịch vụ Redis rồi gán `REDIS_URL`.
+- **Nền tảng chính:** **Render** (region `singapore`, gói `free`)
+- **Web Service:** `day14-production-agent` (runtime `docker`, `rootDir: 06-lab-complete`, `healthCheckPath: /health`, đọc cấu hình từ `06-lab-complete/Dockerfile` và `06-lab-complete/render.yaml`)
+- **Redis / Key Value:** `day14-agent-redis` (Render Key Value, gói `free`, region `singapore`, kết nối nội bộ qua `REDIS_URL`)
 
-## Biến môi trường đã cấu hình trên nền tảng
+## Biến môi trường đã cấu hình trên Render
 
-Không commit giá trị bí mật vào mã nguồn hay Git. Các biến đặt trên dashboard nền tảng:
+Tất cả biến cấu hình và khóa bí mật được thiết lập trực tiếp trên Render Dashboard (không commit vào mã nguồn hay lịch sử Git):
 
-- `PORT` (nền tảng tự cấp, app tự đọc từ biến môi trường)
+- `PORT` *(Render tự cấp, container đọc qua `${PORT:-8000}`)*
 - `ENVIRONMENT` (`production`)
-- `AGENT_API_KEY` (giá trị ngẫu nhiên sinh tự động / secret trên dashboard)
-- `REDIS_URL` (chuỗi kết nối tới Redis trên nền tảng)
+- `AGENT_API_KEY` *(khóa bí mật ngẫu nhiên đặt trong Environment của Render, không lưu trong repo)*
+- `REDIS_URL` *(chuỗi kết nối nội bộ tới dịch vụ `day14-agent-redis`)*
 - `RATE_LIMIT_PER_MINUTE` (`10`)
 - `DAILY_BUDGET_USD` (`1.0`)
 
-## Lệnh kiểm tra sau khi deploy (4 lệnh tự kiểm CP6)
+## Lệnh kiểm tra và kết quả thực tế (4 lệnh tự kiểm CP6)
 
-Sau khi deploy, đặt `BASE` là URL công khai và `AGENT_API_KEY` là khóa đã cấu hình trên nền tảng rồi chạy:
+Đặt `BASE="https://day14-production-agent-u3t1.onrender.com"` và `AGENT_API_KEY` theo giá trị trên Render Dashboard:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/health"                                                          # Kỳ vọng: 200
-curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/ready"                                                           # Kỳ vọng: 200
-curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -d '{"question":"Hello"}'   # Kỳ vọng: 401
-curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -H "X-API-Key: $AGENT_API_KEY" -d '{"question":"Hello"}'   # Kỳ vọng: 200
+curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/health"                                                          # 200
+curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/ready"                                                           # 200
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -d '{"question":"Hello"}'   # 401
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -H "X-API-Key: $AGENT_API_KEY" -d '{"question":"Hello"}'   # 200
 ```
 
-Kiểm tra thêm bằng script chấm:
+Kết quả đo thực tế trên URL công khai:
 
-```bash
-cd 06-lab-complete
-python check_production_ready.py --public-url "$BASE"
+```text
+GET  /health              -> 200  {"status":"ok"}
+GET  /ready               -> 200  {"ready":true}
+POST /ask (không có key)  -> 401  {"detail":"Invalid or missing X-API-Key"}
+POST /ask (có X-API-Key)  -> 200  {"question":"Hello","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"input_tokens":2,"output_tokens":17,"cost_usd":1.05e-05}}
 ```
 
 ## Ảnh chụp màn hình (Screenshots)
 
-*(Cần bổ sung sau khi deploy lên cloud)*
+*(Cần chụp từ trình duyệt Render Dashboard và terminal kiểm thử rồi lưu vào thư mục `screenshots/`, nhớ che `AGENT_API_KEY`)*
 
-- [Bảng điều khiển triển khai (Dashboard)](screenshots/dashboard.png) — chưa chụp
-- [Dịch vụ đang chạy (Service running)](screenshots/running.png) — chưa chụp
-- [Kết quả kiểm thử 4 lệnh curl](screenshots/test.png) — chưa chụp
+- [Bảng điều khiển triển khai (Dashboard)](screenshots/dashboard.png)
+- [Dịch vụ đang chạy (Service running)](screenshots/running.png)
+- [Kết quả kiểm thử 4 lệnh curl](screenshots/test.png)

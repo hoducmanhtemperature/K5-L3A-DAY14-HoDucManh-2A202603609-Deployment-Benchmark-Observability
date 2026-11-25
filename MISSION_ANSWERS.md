@@ -80,13 +80,27 @@ Compose khởi động agent, Redis, Qdrant và Nginx trên network nội bộ. 
 
 ## Part 3: Cloud Deployment
 
-Chưa tạo deployment hoặc URL public vì môi trường hiện tại không có Railway/Render CLI hay phiên đăng nhập cloud. Không khai báo URL giả. Part 6 đã có cấu hình Railway tại `06-lab-complete/railway.toml` và Render tại `06-lab-complete/render.yaml`; Render Blueprint khai báo thêm Key Value cho Redis và truyền connection string qua environment.
+### Exercise 3.2: Triển khai agent Part 6 lên Render (nền tảng chính)
 
-**So sánh config:** `railway.toml` cấu hình builder Dockerfile, healthcheck và restart policy cho một service. `render.yaml` mô tả web service, environment variables và Redis Key Value trong Blueprint. Cả hai giữ API key trong cấu hình nền tảng thay vì source code.
+- **URL công khai:** https://day14-production-agent-u3t1.onrender.com
+- **Kiến trúc trên Render (region `singapore`, gói `free`):**
+  - Web Service `day14-production-agent` chạy Docker từ `06-lab-complete/Dockerfile`, health check `/health`, tự đọc `PORT` do Render cấp.
+  - Dịch vụ Redis `day14-agent-redis` (Render Key Value, gói `free`) cung cấp `REDIS_URL` nội bộ cho `/ready`, rate limiting và cost guard.
+  - Khóa `AGENT_API_KEY` cùng các biến môi trường (`ENVIRONMENT=production`, `RATE_LIMIT_PER_MINUTE=10`, `DAILY_BUDGET_USD=1.0`, `REDIS_URL`) được đặt trên Render, không lưu trong mã nguồn.
+- **Kết quả chạy 4 lệnh tự kiểm CP6 trên URL công khai:**
+
+```text
+GET  /health              -> 200  {"status":"ok"}
+GET  /ready               -> 200  {"ready":true}
+POST /ask (không có key)  -> 401  {"detail":"Invalid or missing X-API-Key"}
+POST /ask (có X-API-Key)  -> 200  {"question":"Hello","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"input_tokens":2,"output_tokens":17,"cost_usd":1.05e-05}}
+```
+
+- **Ảnh chụp màn hình:** xem chi tiết trong [DEPLOYMENT.md](DEPLOYMENT.md) (`screenshots/dashboard.png`, `screenshots/running.png`, `screenshots/test.png`).
+
+**So sánh `railway.toml` với `render.yaml`:** `06-lab-complete/railway.toml` cấu hình builder `DOCKERFILE`, `healthcheckPath = "/health"` và restart policy cho một service đơn lẻ (dịch vụ Redis trên Railway tạo tách biệt trên dashboard hoặc qua CLI). Ngược lại, `06-lab-complete/render.yaml` theo chuẩn Blueprint mô tả đồng thời nhiều tài nguyên trong cùng một file: cả Web Service Docker (`plan: free`, `rootDir: ./06-lab-complete`, `healthCheckPath: /health`) lẫn dịch vụ Redis Key Value (`type: keyvalue`, `plan: free`), đồng thời khai báo nối tự động `REDIS_URL` qua `fromService` và sinh secret `AGENT_API_KEY` qua `generateValue: true` mà không ghi khóa vào Git.
 
 Tham khảo định dạng chính thức: [Render Blueprint YAML](https://render.com/docs/blueprint-spec) và [Railway config-as-code](https://docs.railway.com/config-as-code/reference).
-
-Lưu ý triển khai hiện tại: Railway đánh dấu `railway.toml` là Config as Code cũ; service mới không dùng được file này và hệ thống ngừng đọc file cũ từ 2026-12-01. File vẫn được giữ theo rubric lớp. Với repo mới, dùng Render Blueprint đã khai báo hoặc cấu hình Railway qua dashboard/IaC mới.
 
 **Exercise 3.3 — Cloud Run pipeline:** Cloud Build chạy `pytest`, sau đó build Docker image có tag commit SHA và `latest`. Khi test thành công, pipeline push image lên Container Registry rồi deploy tag theo commit lên Cloud Run tại `asia-southeast1`. `service.yaml` khai báo ingress, concurrency/autoscaling, tài nguyên, environment variables lấy từ Secret Manager và health probes. Không cần deploy để mô tả pipeline.
 
