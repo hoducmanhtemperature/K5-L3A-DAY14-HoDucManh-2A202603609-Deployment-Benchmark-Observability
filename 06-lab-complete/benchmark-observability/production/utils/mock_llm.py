@@ -78,6 +78,9 @@ KNOWLEDGE_BASE: list[tuple[list[str], str]] = [
     (["rate limit", "429"],
      "Rate limiting giới hạn số request mỗi client trong một cửa sổ thời gian, ví dụ 10 req/phút. "
      "Vượt giới hạn thì trả HTTP 429 Too Many Requests kèm header Retry-After."),
+    (["jwt", "api key", "xác thực"],
+     "JWT là token có chữ ký số và thời hạn hết hạn; server xác minh chữ ký trước khi tin claims. "
+     "API key thường là một bí mật tĩnh được gửi cùng request, không tự mang claims hay thời hạn hết hạn."),
     (["stateless", "redis", "session"],
      "Stateless nghĩa là instance không giữ state trong memory; session được lưu ở Redis. "
      "Nhờ vậy có thể scale ngang nhiều instance sau load balancer."),
@@ -100,6 +103,9 @@ KNOWLEDGE_BASE: list[tuple[list[str], str]] = [
     (["slo", "sli", "error budget"],
      "SLI là chỉ số đo được (vd tỉ lệ request thành công), SLO là mục tiêu cho SLI (vd 99.5% trong 30 ngày). "
      "Error budget là phần được phép lỗi còn lại: 100% - SLO."),
+    (["kubernetes hpa", "hpa", "horizontal pod autoscaler"],
+     "Kubernetes HPA (Horizontal Pod Autoscaler) tự scale số pod dựa trên CPU hoặc memory utilization. "
+     "HPA cũng có thể dùng custom metrics như request rate hoặc hàng đợi."),
     (["token", "cost", "chi phí", "budget"],
      "Chi phí LLM tính theo token: cost = input_tokens x giá input + output_tokens x giá output. "
      "Cần theo dõi cost theo thời gian thực và đặt budget alert."),

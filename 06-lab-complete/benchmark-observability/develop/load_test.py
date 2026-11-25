@@ -16,6 +16,8 @@ Vì sao cần p95/p99 mà không chỉ average?
   → 100 request: 97 cái mất 150ms, 3 cái mất 1.7s
     average ≈ 200ms (trông ổn) nhưng p99 ≈ 1.7s (3% user chờ gần 2 giây!)
 """
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
